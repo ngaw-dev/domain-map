@@ -41,6 +41,16 @@ cargo build --release
 
 Binary: `target/release/ngaw-domain`
 
+## Install from Git
+
+On any machine with Rust:
+
+```bash
+cargo install --git https://github.com/ngaw-dev/domain-map.git
+```
+
+Installs the `ngaw-domain` binary to `~/.cargo/bin` (make sure it's on your `PATH`).
+
 ## Manual copy to a live server
 
 Build the Linux binary (from macOS, cross-compile via Docker):

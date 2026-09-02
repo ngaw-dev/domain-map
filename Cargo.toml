@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Interactive CLI that sets up web server vhosts, databases and SSL for a domain"
 license = "MIT"
-repository = "https://github.com/ngaw/ngaw-domain"
+repository = "https://github.com/ngaw-dev/domain-map"
 categories = ["command-line-utilities"]
 keywords = ["nginx", "apache", "server", "devops"]
 
