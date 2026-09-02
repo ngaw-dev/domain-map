@@ -46,7 +46,7 @@ pub fn run_steps(steps: &[Step], quiet: bool) -> Vec<Failure> {
 }
 
 fn run_step(step: &Step, quiet: bool) -> std::result::Result<(), Failure> {
-    let mut child = Command::new(&step.program)
+    let child = Command::new(&step.program)
         .args(&step.args)
         .stdin(Stdio::piped())
         .stdout(if quiet { Stdio::piped() } else { Stdio::inherit() })
