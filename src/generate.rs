@@ -80,6 +80,16 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     let dbname = a.dbname();
     let username = a.username();
     let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
+    let has_files = a.db_mysql || a.db_pgsql || env_snippet(a, db_password).is_some();
+    if has_files {
+        steps.push(Step {
+            description: format!("Create folder /var/www/{domain_folder}"),
+            icon: "📁",
+            program: "mkdir".into(),
+            args: vec!["-p".into(), format!("/var/www/{domain_folder}")],
+            stdin: None,
+        });
+    }
     if a.db_mysql {
         let sql = format!(
             "CREATE DATABASE {dbname};\n\
