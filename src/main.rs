@@ -1,10 +1,11 @@
-mod config;
-mod execute;
-mod generate;
-mod password;
+
+
+
+
 
 use anyhow::Result;
-use config::{Answers, Server};
+use ngaw_domain::config::{self, Answers, Server};
+use ngaw_domain::{execute, generate, password};
 use inquire::{Confirm, Select, Text};
 
 fn main() -> Result<()> {

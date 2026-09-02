@@ -154,8 +154,10 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     conf.push_str(&format!("    server_name {server_names};\n\n"));
     if a.nginx_https && !a.letsencrypt {
         conf.push_str(&format!(
-            "    ssl_certificate /etc/ssl/certs/{fqn}-selfsigned.crt;\n\
-               ssl_certificate_key /etc/ssl/private/{fqn}-selfsigned.key;\n\n"
+            "    ssl_certificate /etc/ssl/certs/{fqn}-selfsigned.crt;\n"
+        ));
+        conf.push_str(&format!(
+            "    ssl_certificate_key /etc/ssl/private/{fqn}-selfsigned.key;\n\n"
         ));
     }
     conf.push_str(&format!("    root /var/www/{dir};\n"));
@@ -185,8 +187,10 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     }
     if a.nginx_logs {
         conf.push_str(&format!(
-            "\n    access_log /var/log/nginx/{fqn}.access.log;\n\
-               error_log /var/log/nginx/{fqn}.error.log;\n"
+            "\n    access_log /var/log/nginx/{fqn}.access.log;\n"
+        ));
+        conf.push_str(&format!(
+            "    error_log /var/log/nginx/{fqn}.error.log;\n"
         ));
     }
     conf.push_str("}\n");
