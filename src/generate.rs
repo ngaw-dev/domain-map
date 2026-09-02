@@ -79,7 +79,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     let password = db_password;
     let dbname = a.dbname();
     let username = a.username();
-    let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
+    let domain_folder = a.domain.as_str();
     let has_files = a.db_mysql || a.db_pgsql || env_snippet(a, db_password).is_some();
     if has_files {
         steps.push(Step {

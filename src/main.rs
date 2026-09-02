@@ -93,7 +93,7 @@ fn main() -> Result<()> {
 /// Commands the user must run manually, e.g. importing the generated SQL.
 fn print_followups(a: &Answers) {
     let fqn = a.fqn();
-    let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
+    let domain_folder = a.domain.as_str();
     let mut cmds: Vec<(&str, String)> = Vec::new();
     if a.db_mysql {
         cmds.push((
