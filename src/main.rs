@@ -32,7 +32,7 @@ fn main() -> Result<()> {
     print_summary(&answers);
     println!("{}", ui::section("The following will be executed"));
     for (i, step) in steps.iter().enumerate() {
-        println!("\n{}", ui::step(i + 1, steps.len(), &step.description));
+        println!("\n{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
         println!("  {}", ui::command(&execute::describe_step(step)));
     }
     if let Some(env) = generate::env_snippet(&answers, &db_password) {

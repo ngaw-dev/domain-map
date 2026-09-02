@@ -25,10 +25,11 @@ pub fn section(title: &str) -> String {
     format!("\n{} {}", ICON_ARROW.dimmed(), title.bold().green())
 }
 
-pub fn step(n: usize, total: usize, desc: &str) -> String {
+pub fn step(n: usize, total: usize, icon: &str, desc: &str) -> String {
     format!(
-        "{} {} {}",
+        "{} {} {} {}",
         format!("({}/{})", n, total).dimmed(),
+        icon,
         ICON_ARROW.cyan(),
         desc.white()
     )

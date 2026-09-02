@@ -4,6 +4,7 @@ use crate::config::{Answers, Server};
 #[derive(Debug)]
 pub struct Step {
     pub description: String,
+    pub icon: &'static str,
     pub program: String,
     pub args: Vec<String>,
     pub stdin: Option<String>,
@@ -20,12 +21,14 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     let index_body = format!("<h1>{fqn}</h1>\n");
     steps.push(Step {
         description: format!("Create document root {root}"),
+        icon: "📁",
         program: "mkdir".into(),
         args: vec!["-p".into(), root.clone()],
         stdin: None,
     });
     steps.push(Step {
         description: "Write placeholder index.html".into(),
+        icon: "📄",
         program: "tee".into(),
         args: vec![
             format!("{}/index.html", root.trim_end_matches('/')),
@@ -42,6 +45,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     // Permissions.
     steps.push(Step {
         description: format!("Grant ownership to {}:www-data", a.server_user),
+        icon: "👤",
         program: "chown".into(),
         args: vec![
             "-R".into(),
@@ -60,6 +64,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         };
         steps.push(Step {
             description: "Obtain Let's Encrypt certificate".into(),
+            icon: "🔒",
             program: "certbot".into(),
             args: vec![
                 flag.into(),
@@ -83,6 +88,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         );
         steps.push(Step {
             description: "Create MySQL database and user".into(),
+            icon: "🗃️",
             program: "mysql".into(),
             args: vec![],
             stdin: Some(sql),
@@ -96,6 +102,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         );
         steps.push(Step {
             description: "Create PostgreSQL database and user".into(),
+            icon: "🗃️",
             program: "runuser".into(),
             args: vec![
                 "-u".into(),
@@ -109,6 +116,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         });
         steps.push(Step {
             description: "Grant schema privileges".into(),
+            icon: "🗃️",
             program: "runuser".into(),
             args: vec![
                 "-u".into(),
@@ -122,6 +130,31 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
             ],
             stdin: None,
         });
+    }
+
+    // Save .env as <fqn>.env in the domain folder, e.g.
+    // apple.mango.com -> /var/www/mango/apple.mango.com.env
+    if let Some(env) = env_snippet(a, db_password) {
+        let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
+        let env_path = format!("/var/www/{domain_folder}/{fqn}.env");
+        steps.push(Step {
+            description: format!("Save .env to {env_path}"),
+            icon: "📝",
+            program: "tee".into(),
+            args: vec![env_path],
+            stdin: Some(env),
+        });
+    }
+
+    // Wrap every step in sudo (we run as a normal user); runuser steps are
+    // already root-only and take the postgres user explicitly.
+    for step in &mut steps {
+        if step.program != "runuser" {
+            let mut args = std::mem::take(&mut step.args);
+            args.insert(0, step.program.clone());
+            step.program = "sudo".into();
+            step.args = args;
+        }
     }
 
     steps
@@ -197,6 +230,7 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     let mut steps = vec![
         Step {
             description: "Write nginx vhost config".into(),
+            icon: "⚙️",
             program: "tee".into(),
             args: vec![
                 format!("/etc/nginx/sites-available/{fqn}.conf"),
@@ -205,6 +239,7 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
         },
         Step {
             description: "Enable site".into(),
+            icon: "🔗",
             program: "ln".into(),
             args: vec![
                 "-sfn".into(),
@@ -218,6 +253,7 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     if a.nginx_https && !a.letsencrypt {
         steps.push(Step {
             description: "Generate self-signed certificate".into(),
+            icon: "🔑",
             program: "openssl".into(),
             args: vec![
                 "req".into(),
@@ -243,12 +279,14 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
 
     steps.push(Step {
         description: "Test nginx configuration".into(),
+        icon: "🧪",
         program: "nginx".into(),
         args: vec!["-t".into()],
         stdin: None,
     });
     steps.push(Step {
         description: "Restart nginx".into(),
+        icon: "🔄",
         program: "systemctl".into(),
         args: vec!["restart".into(), "nginx".into()],
         stdin: None,
@@ -272,6 +310,7 @@ fn apache_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     vec![
         Step {
             description: "Write apache vhost config".into(),
+            icon: "⚙️",
             program: "tee".into(),
             args: vec![
                 format!("/etc/apache2/sites-available/{fqn}.conf"),
@@ -280,18 +319,21 @@ fn apache_steps(a: &Answers, fqn: &str) -> Vec<Step> {
         },
         Step {
             description: "Enable site".into(),
+            icon: "🔗",
             program: "a2ensite".into(),
             args: vec![format!("{fqn}.conf")],
             stdin: None,
         },
         Step {
             description: "Reload apache".into(),
+            icon: "🔄",
             program: "service".into(),
             args: vec!["apache2".into(), "reload".into()],
             stdin: None,
         },
         Step {
             description: "Restart apache".into(),
+            icon: "🔄",
             program: "service".into(),
             args: vec!["apache2".into(), "restart".into()],
             stdin: None,

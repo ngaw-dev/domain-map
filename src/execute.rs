@@ -10,7 +10,7 @@ use owo_colors::OwoColorize;
 /// On the first failure the run aborts and remaining steps are skipped.
 pub fn run_steps(steps: &[Step]) -> Result<()> {
     for (i, step) in steps.iter().enumerate() {
-        println!("{}", ui::step(i + 1, steps.len(), &step.description));
+        println!("{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
         match run_step(step) {
             Ok(()) => println!(
                 "  {} {}",
