@@ -12,9 +12,8 @@ use owo_colors::OwoColorize;
 /// and its captured output.
 pub fn run_steps(steps: &[Step], quiet: bool) -> Result<()> {
     for (i, step) in steps.iter().enumerate() {
-        if !quiet {
-            println!("{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
-        }
+        // Always show which step is running; quiet mode hides command output.
+        println!("{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
         match run_step(step, quiet) {
             Ok(()) => {
                 if !quiet {
