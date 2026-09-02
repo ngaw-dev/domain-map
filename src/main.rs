@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     }
 
     let go = Confirm::new("Execute setup now?")
-        .with_default(false)
+        .with_default(true)
         .prompt()?;
     if !go {
         println!("\n{}", ui::info("Aborted — nothing executed."));
