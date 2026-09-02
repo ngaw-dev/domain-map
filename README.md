@@ -9,8 +9,8 @@ Prompts for email, server username, domain, subdomain, server (nginx/apache) and
 - Creates `/var/www/<domain.tld>/<subdomain>[/public]` with a placeholder `index.html`
 - Writes and enables the vhost config (`sites-available` + symlink / `a2ensite`)
 - Generates a self-signed certificate when HTTPS is enabled without Let's Encrypt
-- Saves database SQL to `/var/www/<domain.tld>/<fqn>-mysql.sql` or `<fqn>-pgsql.sql` for manual import
-- Saves a ready-to-use `.env` to `/var/www/<domain.tld>/<fqn>.env`
+- Saves database SQL to `/var/www/<domain.tld>/mysql-<fqn>.sql` or `pgsql-<fqn>.sql` for manual import
+- Saves a ready-to-use `.env` to `/var/www/<domain.tld>/env-<fqn>`
 - Finishes with `nginx -t` / `apachectl configtest` and a service restart
 - Failures don't abort the run — all steps execute and a summary of failed commands is shown at the end
 

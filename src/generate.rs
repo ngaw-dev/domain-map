@@ -98,10 +98,10 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
              FLUSH PRIVILEGES;\n"
         );
         steps.push(Step {
-            description: format!("Save MySQL SQL to /var/www/{domain_folder}/{fqn}-mysql.sql"),
+            description: format!("Save MySQL SQL to /var/www/{domain_folder}/mysql-{fqn}.sql"),
             icon: "🗃️",
             program: "tee".into(),
-            args: vec![format!("/var/www/{domain_folder}/{fqn}-mysql.sql")],
+            args: vec![format!("/var/www/{domain_folder}/mysql-{fqn}.sql")],
             stdin: Some(sql),
         });
     }
@@ -113,10 +113,10 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
              GRANT ALL ON SCHEMA public TO {username};\n"
         );
         steps.push(Step {
-            description: format!("Save PostgreSQL SQL to /var/www/{domain_folder}/{fqn}-pgsql.sql"),
+            description: format!("Save PostgreSQL SQL to /var/www/{domain_folder}/pgsql-{fqn}.sql"),
             icon: "🗃️",
             program: "tee".into(),
-            args: vec![format!("/var/www/{domain_folder}/{fqn}-pgsql.sql")],
+            args: vec![format!("/var/www/{domain_folder}/pgsql-{fqn}.sql")],
             stdin: Some(sql),
         });
     }
@@ -124,7 +124,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     // Save .env as <fqn>.env in the domain folder, e.g.
     // apple.mango.com -> /var/www/mango/apple.mango.com.env
     if let Some(env) = env_snippet(a, db_password) {
-        let env_path = format!("/var/www/{domain_folder}/{fqn}.env");
+        let env_path = format!("/var/www/{domain_folder}/env-{fqn}");
         steps.push(Step {
             description: format!("Save .env to {env_path}"),
             icon: "📝",

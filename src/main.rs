@@ -98,13 +98,13 @@ fn print_followups(a: &Answers) {
     if a.db_mysql {
         cmds.push((
             "Import MySQL SQL",
-            format!("sudo mysql -u root -p < /var/www/{domain_folder}/{fqn}-mysql.sql"),
+            format!("sudo mysql -u root -p < /var/www/{domain_folder}/mysql-{fqn}.sql"),
         ));
     }
     if a.db_pgsql {
         cmds.push((
             "Import PostgreSQL SQL",
-            format!("sudo psql -U postgres -f /var/www/{domain_folder}/{fqn}-pgsql.sql"),
+            format!("sudo psql -U postgres -f /var/www/{domain_folder}/pgsql-{fqn}.sql"),
         ));
     }
     if cmds.is_empty() {

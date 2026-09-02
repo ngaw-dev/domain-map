@@ -113,7 +113,7 @@ fn mysql_step_uses_shared_password() {
     let steps = ngaw_domain::generate::build_steps(&answers(), "S3cret!pw");
     let sql = steps
         .iter()
-        .find(|s| s.args.iter().any(|a| a.ends_with("-mysql.sql")))
+        .find(|s| s.args.iter().any(|a| a.ends_with("mysql-example.com.sql")))
         .expect("mysql step")
         .stdin
         .as_deref()
