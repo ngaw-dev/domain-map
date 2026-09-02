@@ -7,7 +7,7 @@ use owo_colors::OwoColorize;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let dry_run = args.iter().any(|a| a == "--dry-run" || a == "-n");
+    let execute_now = args.iter().any(|a| a == "-y" || a == "--yes");
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
 
     println!("{}", ui::banner());
@@ -44,16 +44,11 @@ fn main() -> Result<()> {
         println!("{}", env.dimmed());
     }
 
-    if dry_run {
-        println!("\n{}", ui::info("Dry run — nothing executed."));
-        return Ok(());
-    }
-
-    let go = Confirm::new("Execute setup now?")
-        .with_default(true)
-        .prompt()?;
-    if !go {
-        println!("\n{}", ui::info("Aborted — nothing executed."));
+    if !execute_now {
+        println!(
+            "\n{}",
+            ui::info("Dry run — nothing executed. Re-run with -y to apply.")
+        );
         return Ok(());
     }
 

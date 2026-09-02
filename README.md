@@ -12,7 +12,7 @@ Prompts for email, domain, subdomain, server (nginx/apache) and options (public 
 - Runs `nginx -t` / `certbot` / service restarts
 - Creates the database, user and password, and prints a ready-to-use `.env`
 
-Every command is displayed for approval before anything runs. Use `--dry-run` (or `-n`) to preview without executing.
+Every command is displayed before anything runs. By default the CLI does a **dry run**; add `-y` / `--yes` to execute.
 
 ## Install
 
@@ -23,8 +23,10 @@ cargo install --git https://github.com/ngaw/ngaw-domain
 ## Usage
 
 ```bash
-sudo -E ngaw-domain            # run with sudo rights on the target server
-ngaw-domain --dry-run          # preview the commands only
+ngaw-domain                  # interactive prompts, dry run
+ngaw-domain -y               # interactive prompts, execute
+ngaw-domain sub.domain.tld   # non-interactive defaults, dry run
+ngaw-domain sub.domain.tld user -y   # non-interactive, execute
 ```
 
 > The `chown` step targets `SUDO_USER` (or `USER`) so the docroot ends up owned by the invoking user.
