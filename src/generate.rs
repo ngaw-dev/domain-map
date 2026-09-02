@@ -207,7 +207,7 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
             description: "Enable site".into(),
             program: "ln".into(),
             args: vec![
-                "-s".into(),
+                "-sfn".into(),
                 format!("/etc/nginx/sites-available/{fqn}.conf"),
                 "/etc/nginx/sites-enabled/".into(),
             ],
