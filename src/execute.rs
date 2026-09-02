@@ -8,15 +8,23 @@ use owo_colors::OwoColorize;
 
 /// Run steps sequentially, streaming stdin payloads and checking exit codes.
 /// On the first failure the run aborts and remaining steps are skipped.
-pub fn run_steps(steps: &[Step]) -> Result<()> {
+/// When `quiet`, successful steps print nothing; failures show the step
+/// and its captured output.
+pub fn run_steps(steps: &[Step], quiet: bool) -> Result<()> {
     for (i, step) in steps.iter().enumerate() {
-        println!("{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
-        match run_step(step) {
-            Ok(()) => println!(
-                "  {} {}",
-                ui::ICON_CHECK.green(),
-                "done".dimmed()
-            ),
+        if !quiet {
+            println!("{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
+        }
+        match run_step(step, quiet) {
+            Ok(()) => {
+                if !quiet {
+                    println!(
+                        "  {} {}",
+                        ui::ICON_CHECK.green(),
+                        "done".dimmed()
+                    );
+                }
+            }
             Err(e) => {
                 println!(
                     "\n{}",
@@ -29,10 +37,12 @@ pub fn run_steps(steps: &[Step]) -> Result<()> {
     Ok(())
 }
 
-fn run_step(step: &Step) -> Result<()> {
+fn run_step(step: &Step, quiet: bool) -> Result<()> {
     let mut child = Command::new(&step.program)
         .args(&step.args)
         .stdin(Stdio::piped())
+        .stdout(if quiet { Stdio::piped() } else { Stdio::inherit() })
+        .stderr(if quiet { Stdio::piped() } else { Stdio::inherit() })
         .spawn()
         .with_context(|| format!("failed to spawn {}", step.program))?;
 
@@ -45,11 +55,35 @@ fn run_step(step: &Step) -> Result<()> {
     }
     drop(child.stdin.take());
 
-    let status = child
-        .wait()
-        .with_context(|| format!("failed waiting for {}", step.program))?;
-    if !status.success() {
-        anyhow::bail!("{} exited with {}", step.program, status);
+    let output = if quiet {
+        match child.wait_with_output() {
+            Ok(out) => Some(out),
+            Err(e) => return Err(anyhow::Error::from(e).context(format!("failed waiting for {}", step.program))),
+        }
+    } else {
+        let status = child
+            .wait()
+            .with_context(|| format!("failed waiting for {}", step.program))?;
+        if !status.success() {
+            anyhow::bail!("{} exited with {}", step.program, status);
+        }
+        return Ok(());
+    };
+
+    let output = output.expect("quiet branch always produces output");
+    if !output.status.success() {
+        println!(
+            "\n  {} {}",
+            ui::ICON_WRENCH,
+            describe_step(step)
+        );
+        if !output.stdout.is_empty() {
+            println!("  stdout:\n{}", String::from_utf8_lossy(&output.stdout));
+        }
+        if !output.stderr.is_empty() {
+            println!("  stderr:\n{}", String::from_utf8_lossy(&output.stderr));
+        }
+        anyhow::bail!("{} exited with {}", step.program, output.status);
     }
     Ok(())
 }

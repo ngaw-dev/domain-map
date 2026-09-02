@@ -30,21 +30,20 @@ fn main() -> Result<()> {
     let steps = generate::build_steps(&answers, &db_password);
 
     print_summary(&answers);
-    println!("{}", ui::section("The following will be executed"));
-    for (i, step) in steps.iter().enumerate() {
-        println!("\n{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
-        println!("  {}", ui::command(&execute::describe_step(step)));
-    }
-    if let Some(env) = generate::env_snippet(&answers, &db_password) {
-        println!(
-            "\n{} {}",
-            ui::ICON_DB,
-            ".env (copy into your app)".bold()
-        );
-        println!("{}", env.dimmed());
-    }
-
     if !execute_now {
+        println!("{}", ui::section("The following will be executed"));
+        for (i, step) in steps.iter().enumerate() {
+            println!("\n{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
+            println!("  {}", ui::command(&execute::describe_step(step)));
+        }
+        if let Some(env) = generate::env_snippet(&answers, &db_password) {
+            println!(
+                "\n{} {}",
+                ui::ICON_DB,
+                ".env (copy into your app)".bold()
+            );
+            println!("{}", env.dimmed());
+        }
         println!(
             "\n{}",
             ui::info("Dry run — nothing executed. Re-run with -y to apply.")
@@ -52,10 +51,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    execute::run_steps(&steps)?;
+    execute::run_steps(&steps, true)?;
     println!(
-        "\n{} Site root: {}",
-        ui::ICON_GLOBE,
+        "\n{} Setup complete. Site root: {}",
+        ui::ICON_CHECK,
         format!("/var/www/{}", answers.dir()).yellow().bold()
     );
     Ok(())
