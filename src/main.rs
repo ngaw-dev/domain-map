@@ -104,7 +104,7 @@ fn print_followups(a: &Answers) {
     if a.db_pgsql {
         cmds.push((
             "Import PostgreSQL SQL",
-            format!("sudo -u postgres psql -f /var/www/{domain_folder}/{fqn}-pgsql.sql"),
+            format!("sudo psql -U postgres -f /var/www/{domain_folder}/{fqn}-pgsql.sql"),
         ));
     }
     if cmds.is_empty() {
