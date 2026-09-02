@@ -1,9 +1,4 @@
-
-
-
-
-
-use anyhow::Result;
+use anyhow::{bail, Result};
 use inquire::{Confirm, Select, Text};
 use ngaw_domain::config::{self, Answers, Server};
 use ngaw_domain::ui;
@@ -11,7 +6,9 @@ use ngaw_domain::{execute, generate, password};
 use owo_colors::OwoColorize;
 
 fn main() -> Result<()> {
-    let dry_run = std::env::args().any(|arg| arg == "--dry-run" || arg == "-n");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let dry_run = args.iter().any(|a| a == "--dry-run" || a == "-n");
+    let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
 
     println!("{}", ui::banner());
     println!(
@@ -19,7 +16,12 @@ fn main() -> Result<()> {
         "domain provisioning, interactive".dimmed()
     );
 
-    let answers = prompt()?;
+    let answers = match positional.as_slice() {
+        [] => prompt()?,
+        [domain] => from_args(domain, None)?,
+        [domain, user, ..] => from_args(domain, Some(user))?,
+    };
+
     let db_password = if answers.db_mysql || answers.db_pgsql {
         password::random_password()
     } else {
@@ -64,6 +66,41 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Non-interactive mode: `ngaw-domain sub.domain.tld [username]`.
+/// A 2+ label argument is `sub.domain.tld`; a single-label TLD-only value is
+/// invalid. Everything else falls back to defaults (matching prompt defaults).
+fn from_args(domain: &str, user: Option<&str>) -> Result<Answers> {
+    let domain = domain.trim().to_lowercase();
+    if !matches!(config::validate_domain(&domain), inquire::validator::Validation::Valid) {
+        bail!("invalid domain: {domain} (expected sub.domain.tld or domain.tld)");
+    }
+
+    // `a.b.c` -> subdomain `a`, domain `b.c`; `a.b` -> bare domain (implicit www).
+    let (subdomain, domain) = match domain.split_once('.') {
+        Some((first, rest)) if rest.contains('.') => (first.to_string(), rest.to_string()),
+        Some((_, _)) => (String::new(), domain),
+        None => unreachable!("validated domain always has a dot"),
+    };
+
+    Ok(Answers {
+        email: "hello@ngaw.xyz".into(),
+        server_user: user
+            .map(str::to_string)
+            .unwrap_or_else(whoami_default),
+        domain,
+        subdomain,
+        server: Server::Nginx,
+        public: true,
+        letsencrypt: false,
+        nginx_https: true,
+        nginx_php: true,
+        nginx_logs: true,
+        nginx_deny: true,
+        db_mysql: true,
+        db_pgsql: false,
+    })
+}
+
 fn print_summary(a: &Answers) {
     println!("{}", ui::section("Plan"));
     println!("{}", ui::label_value("Domain", &a.fqn()));
@@ -75,7 +112,7 @@ fn print_summary(a: &Answers) {
         "{}",
         ui::label_value(
             "Docroot",
-            &format!("/var/www/{}{}", a.dir(), if a.public { "" } else { "" })
+            &format!("/var/www/{}", a.dir())
         )
     );
     println!(

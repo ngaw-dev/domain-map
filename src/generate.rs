@@ -21,7 +21,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     steps.push(Step {
         description: format!("Create document root {root}"),
         program: "mkdir".into(),
-        args: vec!["-p".into(), "-p".into(), root.clone()],
+        args: vec!["-p".into(), root.clone()],
         stdin: None,
     });
     steps.push(Step {
