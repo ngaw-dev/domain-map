@@ -1,0 +1,14 @@
+[package]
+name = "ngaw-domain"
+version = "0.1.0"
+edition = "2024"
+description = "Interactive CLI that sets up web server vhosts, databases and SSL for a domain"
+license = "MIT"
+repository = "https://github.com/ngaw/ngaw-domain"
+categories = ["command-line-utilities"]
+keywords = ["nginx", "apache", "server", "devops"]
+
+[dependencies]
+anyhow = "1"
+inquire = { version = "0.7", default-features = false, features = ["crossterm"] }
+rand = "0.9"
