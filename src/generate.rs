@@ -75,10 +75,11 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         });
     }
 
-    // Databases (one shared password for SQL and the .env snippet).
+    // Databases: save SQL to the domain folder for the user to import.
     let password = db_password;
     let dbname = a.dbname();
     let username = a.username();
+    let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
     if a.db_mysql {
         let sql = format!(
             "CREATE DATABASE {dbname};\n\
@@ -87,10 +88,10 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
              FLUSH PRIVILEGES;\n"
         );
         steps.push(Step {
-            description: "Create MySQL database and user".into(),
+            description: format!("Save MySQL SQL to /var/www/{domain_folder}/{fqn}-mysql.sql"),
             icon: "🗃️",
-            program: "mysql".into(),
-            args: vec![],
+            program: "tee".into(),
+            args: vec![format!("/var/www/{domain_folder}/{fqn}-mysql.sql")],
             stdin: Some(sql),
         });
     }
@@ -98,44 +99,21 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         let sql = format!(
             "CREATE DATABASE {dbname};\n\
              CREATE USER {username} WITH PASSWORD '{password}';\n\
-             GRANT ALL PRIVILEGES ON DATABASE {dbname} TO {username};\n"
+             GRANT ALL PRIVILEGES ON DATABASE {dbname} TO {username};\n\
+             GRANT ALL ON SCHEMA public TO {username};\n"
         );
         steps.push(Step {
-            description: "Create PostgreSQL database and user".into(),
+            description: format!("Save PostgreSQL SQL to /var/www/{domain_folder}/{fqn}-pgsql.sql"),
             icon: "🗃️",
-            program: "runuser".into(),
-            args: vec![
-                "-u".into(),
-                "postgres".into(),
-                "--".into(),
-                "psql".into(),
-                "-v".into(),
-                "ON_ERROR_STOP=1".into(),
-            ],
+            program: "tee".into(),
+            args: vec![format!("/var/www/{domain_folder}/{fqn}-pgsql.sql")],
             stdin: Some(sql),
-        });
-        steps.push(Step {
-            description: "Grant schema privileges".into(),
-            icon: "🗃️",
-            program: "runuser".into(),
-            args: vec![
-                "-u".into(),
-                "postgres".into(),
-                "--".into(),
-                "psql".into(),
-                "-d".into(),
-                dbname,
-                "-c".into(),
-                format!("GRANT ALL ON SCHEMA public TO {username};"),
-            ],
-            stdin: None,
         });
     }
 
     // Save .env as <fqn>.env in the domain folder, e.g.
     // apple.mango.com -> /var/www/mango/apple.mango.com.env
     if let Some(env) = env_snippet(a, db_password) {
-        let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
         let env_path = format!("/var/www/{domain_folder}/{fqn}.env");
         steps.push(Step {
             description: format!("Save .env to {env_path}"),
@@ -144,6 +122,42 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
             args: vec![env_path],
             stdin: Some(env),
         });
+    }
+
+    // Finish: validate and restart the web server so everything is live.
+    match a.server {
+        Server::Nginx => {
+            steps.push(Step {
+                description: "Test nginx configuration".into(),
+                icon: "🧪",
+                program: "nginx".into(),
+                args: vec!["-t".into()],
+                stdin: None,
+            });
+            steps.push(Step {
+                description: "Restart nginx".into(),
+                icon: "🔄",
+                program: "service".into(),
+                args: vec!["nginx".into(), "restart".into()],
+                stdin: None,
+            });
+        }
+        Server::Apache => {
+            steps.push(Step {
+                description: "Test apache configuration".into(),
+                icon: "🧪",
+                program: "apachectl".into(),
+                args: vec!["configtest".into()],
+                stdin: None,
+            });
+            steps.push(Step {
+                description: "Restart apache".into(),
+                icon: "🔄",
+                program: "service".into(),
+                args: vec!["apache2".into(), "restart".into()],
+                stdin: None,
+            });
+        }
     }
 
     // Wrap every step in sudo (we run as a normal user); runuser steps are
@@ -277,21 +291,6 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
         });
     }
 
-    steps.push(Step {
-        description: "Test nginx configuration".into(),
-        icon: "🧪",
-        program: "nginx".into(),
-        args: vec!["-t".into()],
-        stdin: None,
-    });
-    steps.push(Step {
-        description: "Restart nginx".into(),
-        icon: "🔄",
-        program: "service".into(),
-        args: vec!["nginx".into(), "restart".into()],
-        stdin: None,
-    });
-
     steps
 }
 
@@ -322,20 +321,6 @@ fn apache_steps(a: &Answers, fqn: &str) -> Vec<Step> {
             icon: "🔗",
             program: "a2ensite".into(),
             args: vec![format!("{fqn}.conf")],
-            stdin: None,
-        },
-        Step {
-            description: "Reload apache".into(),
-            icon: "🔄",
-            program: "service".into(),
-            args: vec!["apache2".into(), "reload".into()],
-            stdin: None,
-        },
-        Step {
-            description: "Restart apache".into(),
-            icon: "🔄",
-            program: "service".into(),
-            args: vec!["apache2".into(), "restart".into()],
             stdin: None,
         },
     ]

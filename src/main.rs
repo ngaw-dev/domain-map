@@ -57,7 +57,34 @@ fn main() -> Result<()> {
         ui::ICON_CHECK,
         format!("/var/www/{}", answers.dir()).yellow().bold()
     );
+    print_followups(&answers);
     Ok(())
+}
+
+/// Commands the user must run manually, e.g. importing the generated SQL.
+fn print_followups(a: &Answers) {
+    let fqn = a.fqn();
+    let domain_folder = a.domain.split('.').next().unwrap_or(&a.domain);
+    let mut cmds: Vec<(&str, String)> = Vec::new();
+    if a.db_mysql {
+        cmds.push((
+            "Import MySQL SQL",
+            format!("sudo mysql -u root -p < /var/www/{domain_folder}/{fqn}-mysql.sql"),
+        ));
+    }
+    if a.db_pgsql {
+        cmds.push((
+            "Import PostgreSQL SQL",
+            format!("sudo -u postgres psql -f /var/www/{domain_folder}/{fqn}-pgsql.sql"),
+        ));
+    }
+    if cmds.is_empty() {
+        return;
+    }
+    println!("\n{}", ui::section("Run these manually"));
+    for (label, cmd) in cmds {
+        println!("  {} {}", label, cmd.bright_blue());
+    }
 }
 
 /// Non-interactive mode: `ngaw-domain sub.domain.tld [username]`.
