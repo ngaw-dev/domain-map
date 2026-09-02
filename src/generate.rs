@@ -287,8 +287,8 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     steps.push(Step {
         description: "Restart nginx".into(),
         icon: "🔄",
-        program: "systemctl".into(),
-        args: vec!["restart".into(), "nginx".into()],
+        program: "service".into(),
+        args: vec!["nginx".into(), "restart".into()],
         stdin: None,
     });
 
