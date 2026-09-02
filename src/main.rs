@@ -51,12 +51,41 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    execute::run_steps(&steps, true)?;
-    println!(
-        "\n{} Setup complete. Site root: {}",
-        ui::ICON_CHECK,
-        format!("/var/www/{}", answers.dir()).yellow().bold()
-    );
+    let failures = execute::run_steps(&steps, true);
+
+    if failures.is_empty() {
+        println!(
+            "\n{} Setup complete. Site root: {}",
+            ui::ICON_CHECK,
+            format!("/var/www/{}", answers.dir()).yellow().bold()
+        );
+    } else {
+        println!(
+            "\n{} {} step(s) failed:",
+            ui::ICON_CROSS,
+            failures.len().to_string().red().bold()
+        );
+        for f in &failures {
+            println!(
+                "\n  {} {}",
+                ui::ICON_CROSS,
+                f.description.red()
+            );
+            println!("  {} {}", ui::ICON_WRENCH, f.command);
+            if !f.output.is_empty() {
+                println!("{}", f.output.dimmed());
+            }
+        }
+        println!(
+            "\n{} {}",
+            ui::ICON_CHECK,
+            "Remaining steps completed. Site root:".green(),
+        );
+        println!(
+            "  {}",
+            format!("/var/www/{}", answers.dir()).yellow().bold()
+        );
+    }
     print_followups(&answers);
     Ok(())
 }
