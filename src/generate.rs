@@ -20,15 +20,14 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     let index_body = format!("<h1>{fqn}</h1>\n");
     steps.push(Step {
         description: format!("Create document root {root}"),
-        program: "sudo".into(),
-        args: vec!["mkdir".into(), "-p".into(), root.clone()],
+        program: "mkdir".into(),
+        args: vec!["-p".into(), "-p".into(), root.clone()],
         stdin: None,
     });
     steps.push(Step {
         description: "Write placeholder index.html".into(),
-        program: "sudo".into(),
+        program: "tee".into(),
         args: vec![
-            "tee".into(),
             format!("{}/index.html", root.trim_end_matches('/')),
         ],
         stdin: Some(index_body),
@@ -42,12 +41,11 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
 
     // Permissions.
     steps.push(Step {
-        description: "Grant ownership to $USER:www-data".into(),
-        program: "sudo".into(),
+        description: format!("Grant ownership to {}:www-data", a.server_user),
+        program: "chown".into(),
         args: vec![
-            "chown".into(),
             "-R".into(),
-            format!("{}:www-data", whoami_arg()),
+            format!("{}:www-data", a.server_user),
             format!("/var/www/{}", a.domain),
         ],
         stdin: None,
@@ -62,9 +60,8 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         };
         steps.push(Step {
             description: "Obtain Let's Encrypt certificate".into(),
-            program: "sudo".into(),
+            program: "certbot".into(),
             args: vec![
-                "certbot".into(),
                 flag.into(),
                 "-d".into(),
                 fqn.clone(),
@@ -86,8 +83,8 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         );
         steps.push(Step {
             description: "Create MySQL database and user".into(),
-            program: "sudo".into(),
-            args: vec!["mysql".into()],
+            program: "mysql".into(),
+            args: vec![],
             stdin: Some(sql),
         });
     }
@@ -99,10 +96,11 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         );
         steps.push(Step {
             description: "Create PostgreSQL database and user".into(),
-            program: "sudo".into(),
+            program: "runuser".into(),
             args: vec![
                 "-u".into(),
                 "postgres".into(),
+                "--".into(),
                 "psql".into(),
                 "-v".into(),
                 "ON_ERROR_STOP=1".into(),
@@ -111,10 +109,11 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         });
         steps.push(Step {
             description: "Grant schema privileges".into(),
-            program: "sudo".into(),
+            program: "runuser".into(),
             args: vec![
                 "-u".into(),
                 "postgres".into(),
+                "--".into(),
                 "psql".into(),
                 "-d".into(),
                 dbname,
@@ -198,18 +197,16 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     let mut steps = vec![
         Step {
             description: "Write nginx vhost config".into(),
-            program: "sudo".into(),
+            program: "tee".into(),
             args: vec![
-                "tee".into(),
                 format!("/etc/nginx/sites-available/{fqn}.conf"),
             ],
             stdin: Some(conf),
         },
         Step {
             description: "Enable site".into(),
-            program: "sudo".into(),
+            program: "ln".into(),
             args: vec![
-                "ln".into(),
                 "-s".into(),
                 format!("/etc/nginx/sites-available/{fqn}.conf"),
                 "/etc/nginx/sites-enabled/".into(),
@@ -221,9 +218,8 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     if a.nginx_https && !a.letsencrypt {
         steps.push(Step {
             description: "Generate self-signed certificate".into(),
-            program: "sudo".into(),
+            program: "openssl".into(),
             args: vec![
-                "openssl".into(),
                 "req".into(),
                 "-x509".into(),
                 "-nodes".into(),
@@ -247,14 +243,14 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
 
     steps.push(Step {
         description: "Test nginx configuration".into(),
-        program: "sudo".into(),
-        args: vec!["nginx".into(), "-t".into()],
+        program: "nginx".into(),
+        args: vec!["-t".into()],
         stdin: None,
     });
     steps.push(Step {
         description: "Restart nginx".into(),
-        program: "sudo".into(),
-        args: vec!["systemctl".into(), "restart".into(), "nginx".into()],
+        program: "systemctl".into(),
+        args: vec!["restart".into(), "nginx".into()],
         stdin: None,
     });
 
@@ -276,29 +272,28 @@ fn apache_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     vec![
         Step {
             description: "Write apache vhost config".into(),
-            program: "sudo".into(),
+            program: "tee".into(),
             args: vec![
-                "tee".into(),
                 format!("/etc/apache2/sites-available/{fqn}.conf"),
             ],
             stdin: Some(conf),
         },
         Step {
             description: "Enable site".into(),
-            program: "sudo".into(),
-            args: vec!["a2ensite".into(), format!("{fqn}.conf")],
+            program: "a2ensite".into(),
+            args: vec![format!("{fqn}.conf")],
             stdin: None,
         },
         Step {
             description: "Reload apache".into(),
-            program: "sudo".into(),
-            args: vec!["service".into(), "apache2".into(), "reload".into()],
+            program: "service".into(),
+            args: vec!["apache2".into(), "reload".into()],
             stdin: None,
         },
         Step {
             description: "Restart apache".into(),
-            program: "sudo".into(),
-            args: vec!["service".into(), "apache2".into(), "restart".into()],
+            program: "service".into(),
+            args: vec!["apache2".into(), "restart".into()],
             stdin: None,
         },
     ]
@@ -324,10 +319,4 @@ pub fn env_snippet(a: &Answers, password: &str) -> Option<String> {
         a.dbname(),
         a.username()
     ))
-}
-
-fn whoami_arg() -> String {
-    std::env::var("SUDO_USER")
-        .or_else(|_| std::env::var("USER"))
-        .unwrap_or_else(|_| "$USER".into())
 }

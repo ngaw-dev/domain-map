@@ -11,4 +11,5 @@ keywords = ["nginx", "apache", "server", "devops"]
 [dependencies]
 anyhow = "1"
 inquire = { version = "0.7", default-features = false, features = ["crossterm"] }
+owo-colors = "4"
 rand = "0.9"

@@ -3,6 +3,7 @@ use ngaw_domain::config::{Answers, Server};
 fn answers() -> Answers {
     Answers {
         email: "hello@ngaw.xyz".into(),
+        server_user: "deploy".into(),
         domain: "example.com".into(),
         subdomain: String::new(),
         server: Server::Nginx,
@@ -76,7 +77,7 @@ fn nginx_conf_contains_expected_blocks() {
     let steps = ngaw_domain::generate::build_steps(&answers(), "pw");
     let conf_step = steps
         .iter()
-        .find(|s| s.args.len() > 1 && s.args[1].contains("/etc/nginx/sites-available/"))
+        .find(|s| s.program == "tee" && s.args.iter().any(|a| a.contains("/etc/nginx/sites-available/")))
         .expect("vhost step");
     let conf = conf_step.stdin.as_deref().unwrap();
     assert!(conf.contains("listen 443 ssl;"));
@@ -95,7 +96,7 @@ fn apache_conf_matches_php_output() {
     let steps = ngaw_domain::generate::build_steps(&a, "pw");
     let conf = steps
         .iter()
-        .find(|s| s.args.len() > 1 && s.args[1].contains("/etc/apache2/sites-available/"))
+        .find(|s| s.program == "tee" && s.args.iter().any(|a| a.contains("/etc/apache2/sites-available/")))
         .expect("vhost step")
         .stdin
         .as_deref()
@@ -112,7 +113,7 @@ fn mysql_step_uses_shared_password() {
     let steps = ngaw_domain::generate::build_steps(&answers(), "S3cret!pw");
     let sql = steps
         .iter()
-        .find(|s| s.args.last().map(String::as_str) == Some("mysql"))
+        .find(|s| s.program == "mysql")
         .expect("mysql step")
         .stdin
         .as_deref()

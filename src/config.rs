@@ -9,6 +9,7 @@ pub enum Server {
 #[derive(Debug)]
 pub struct Answers {
     pub email: String,
+    pub server_user: String,
     pub domain: String,
     pub subdomain: String,
     pub server: Server,
