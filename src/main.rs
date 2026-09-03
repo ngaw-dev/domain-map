@@ -228,16 +228,19 @@ fn prompt() -> Result<Answers> {
         _ => (Server::Apache, false),
     };
 
-    let public = Confirm::new("Use public directory?")
-        .with_default(true)
-        .prompt()?;
-    let letsencrypt = Confirm::new("Let's Encrypt cert?")
-        .with_default(false)
-        .prompt()?;
+    let (mut public, mut letsencrypt) = (false, false);
+    if !docker {
+        public = Confirm::new("Use public directory?")
+            .with_default(true)
+            .prompt()?;
+        letsencrypt = Confirm::new("Let's Encrypt cert?")
+            .with_default(false)
+            .prompt()?;
+    }
 
     let (mut nginx_https, mut nginx_php, mut nginx_logs, mut nginx_deny) =
         (false, false, false, false);
-    let (mut docker, mut docker_host_port) = (false, 0);
+    let mut docker_host_port = 0;
     if docker {
         nginx_https = Confirm::new("HTTPS (SSL + redirect)?")
             .with_default(true)
