@@ -242,12 +242,8 @@ fn prompt() -> Result<Answers> {
         (false, false, false, false);
     let mut docker_host_port = 0;
     if docker {
-        nginx_https = Confirm::new("HTTPS (SSL + redirect)?")
-            .with_default(true)
-            .prompt()?;
-        nginx_logs = Confirm::new("Access / error logs?")
-            .with_default(true)
-            .prompt()?;
+        nginx_https = true;
+        nginx_logs = true;
         let port = Text::new("Host port (container published on 127.0.0.1)")
             .with_placeholder("8091")
             .with_validator(|v: &str| Ok(config::validate_port(v.trim())))
@@ -260,8 +256,11 @@ fn prompt() -> Result<Answers> {
         nginx_deny = Confirm::new("Deny dotfiles?").with_default(true).prompt()?;
     }
 
-    let db_mysql = Confirm::new("MySQL database?").with_default(true).prompt()?;
-    let db_pgsql = Confirm::new("PostgreSQL database?").with_default(false).prompt()?;
+    let (mut db_mysql, mut db_pgsql) = (false, false);
+    if !docker {
+        db_mysql = Confirm::new("MySQL database?").with_default(true).prompt()?;
+        db_pgsql = Confirm::new("PostgreSQL database?").with_default(false).prompt()?;
+    }
 
     Ok(Answers {
         email,
