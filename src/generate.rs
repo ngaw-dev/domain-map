@@ -16,25 +16,27 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
 
     let mut steps = Vec::new();
 
-    // Create document root and placeholder index.html.
+    // Create document root and placeholder index.html (not for docker proxies).
     let root = format!("/var/www/{dir}");
-    let index_body = format!("<h1>{fqn}</h1>\n");
-    steps.push(Step {
-        description: format!("Create document root {root}"),
-        icon: "📁",
-        program: "mkdir".into(),
-        args: vec!["-p".into(), root.clone()],
-        stdin: None,
-    });
-    steps.push(Step {
-        description: "Write placeholder index.html".into(),
-        icon: "📄",
-        program: "tee".into(),
-        args: vec![
-            format!("{}/index.html", root.trim_end_matches('/')),
-        ],
-        stdin: Some(index_body),
-    });
+    if !a.docker {
+        let index_body = format!("<h1>{fqn}</h1>\n");
+        steps.push(Step {
+            description: format!("Create document root {root}"),
+            icon: "📁",
+            program: "mkdir".into(),
+            args: vec!["-p".into(), root.clone()],
+            stdin: None,
+        });
+        steps.push(Step {
+            description: "Write placeholder index.html".into(),
+            icon: "📄",
+            program: "tee".into(),
+            args: vec![
+                format!("{}/index.html", root.trim_end_matches('/')),
+            ],
+            stdin: Some(index_body),
+        });
+    }
 
     // Vhost config + enable site.
     match a.server {
@@ -42,18 +44,20 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
         Server::Apache => steps.extend(apache_steps(a, &fqn)),
     }
 
-    // Permissions.
-    steps.push(Step {
-        description: format!("Grant ownership to {}:www-data", a.server_user),
-        icon: "👤",
-        program: "chown".into(),
-        args: vec![
-            "-R".into(),
-            format!("{}:www-data", a.server_user),
-            format!("/var/www/{}", a.domain),
-        ],
-        stdin: None,
-    });
+    // Permissions (docker proxies serve no local files).
+    if !a.docker {
+        steps.push(Step {
+            description: format!("Grant ownership to {}:www-data", a.server_user),
+            icon: "👤",
+            program: "chown".into(),
+            args: vec![
+                "-R".into(),
+                format!("{}:www-data", a.server_user),
+                format!("/var/www/{}", a.domain),
+            ],
+            stdin: None,
+        });
+    }
 
     // Let's Encrypt, after the site is live.
     if a.letsencrypt {
@@ -216,30 +220,46 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
             "    ssl_certificate_key /etc/ssl/private/{fqn}-selfsigned.key;\n\n"
         ));
     }
-    conf.push_str(&format!("    root /var/www/{dir};\n"));
-    conf.push_str(&format!(
-        "    index {}index.html index.htm;\n\n",
-        if a.nginx_php { "index.php " } else { "" }
-    ));
-    conf.push_str("    location / {\n");
-    conf.push_str(if a.nginx_php {
-        "        try_files $uri $uri/ /index.php?$query_string;\n"
+    if a.docker {
+        conf.push_str("    location / {\n");
+        conf.push_str(&format!(
+            "        proxy_pass http://127.0.0.1:{};\n",
+            a.docker_host_port
+        ));
+        conf.push_str("        proxy_set_header Host $host;\n");
+        conf.push_str("        proxy_set_header X-Real-IP $remote_addr;\n");
+        conf
+            .push_str("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n");
+        conf.push_str("        # Important: Tell your app that it's behind HTTPS\n");
+        conf.push_str("        proxy_set_header X-Forwarded-Proto $scheme;\n");
+        conf.push_str("    }\n");
     } else {
-        "        try_files $uri $uri/ =404;\n"
-    });
-    conf.push_str("    }\n");
-    if a.nginx_php {
-        conf.push_str("\n    location ~ \\.php$ {\n");
-        conf.push_str("        include snippets/fastcgi-php.conf;\n");
-        conf.push_str("        fastcgi_pass unix:/run/php/php8.3-fpm.sock;\n");
-        conf.push_str("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n");
-        conf.push_str("        include fastcgi_params;\n");
+        conf.push_str(&format!("    root /var/www/{dir};\n"));
+        conf.push_str(&format!(
+            "    index {}index.html index.htm;\n\n",
+            if a.nginx_php { "index.php " } else { "" }
+        ));
+        conf.push_str("    location / {\n");
+        conf.push_str(if a.nginx_php {
+            "        try_files $uri $uri/ /index.php?$query_string;\n"
+        } else {
+            "        try_files $uri $uri/ =404;\n"
+        });
         conf.push_str("    }\n");
-    }
-    if a.nginx_deny {
-        conf.push_str("\n    location ~ /\\.ht {\n");
-        conf.push_str("        deny all;\n");
-        conf.push_str("    }\n");
+        if a.nginx_php {
+            conf.push_str("\n    location ~ \\.php$ {\n");
+            conf.push_str("        include snippets/fastcgi-php.conf;\n");
+            conf.push_str("        fastcgi_pass unix:/run/php/php8.3-fpm.sock;\n");
+            conf
+                .push_str("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n");
+            conf.push_str("        include fastcgi_params;\n");
+            conf.push_str("    }\n");
+        }
+        if a.nginx_deny {
+            conf.push_str("\n    location ~ /\\.ht {\n");
+            conf.push_str("        deny all;\n");
+            conf.push_str("    }\n");
+        }
     }
     if a.nginx_logs {
         conf.push_str(&format!(

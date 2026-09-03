@@ -146,6 +146,8 @@ fn from_args(domain: &str, user: Option<&str>) -> Result<Answers> {
         nginx_php: true,
         nginx_logs: true,
         nginx_deny: true,
+        docker: false,
+        docker_host_port: 0,
         db_mysql: true,
         db_pgsql: false,
     })
@@ -158,13 +160,12 @@ fn print_summary(a: &Answers) {
         "{}",
         ui::label_value("Server", if a.server == Server::Nginx { "nginx" } else { "apache" })
     );
-    println!(
-        "{}",
-        ui::label_value(
-            "Docroot",
-            &format!("/var/www/{}", a.dir())
-        )
-    );
+    let docroot = if a.docker {
+        "— (docker proxy)".to_string()
+    } else {
+        format!("/var/www/{}", a.dir())
+    };
+    println!("{}", ui::label_value("Docroot", &docroot));
     println!(
         "{}",
         ui::label_value("SSL", if a.letsencrypt { "Let's Encrypt" } else if a.nginx_https { "self-signed" } else { "none" })
@@ -181,6 +182,15 @@ fn print_summary(a: &Answers) {
         "{}",
         ui::label_value("Databases", if dbs.is_empty() { "none" } else { &dbs_joined })
     );
+    if a.docker {
+        println!(
+            "{}",
+            ui::label_value(
+                "Backend",
+                &format!("http://127.0.0.1:{}", a.docker_host_port)
+            )
+        );
+    }
 }
 
 fn whoami_default() -> String {
@@ -223,15 +233,39 @@ fn prompt() -> Result<Answers> {
 
     let (mut nginx_https, mut nginx_php, mut nginx_logs, mut nginx_deny) =
         (false, false, false, false);
+    let (mut docker, mut docker_host_port) = (false, 0);
     if server == Server::Nginx {
-        nginx_https = Confirm::new("HTTPS (SSL + redirect)?").with_default(true).prompt()?;
-        nginx_php = Confirm::new("PHP (PHP-FPM)?").with_default(true).prompt()?;
-        nginx_logs = Confirm::new("Access / error logs?").with_default(true).prompt()?;
-        nginx_deny = Confirm::new("Deny dotfiles?").with_default(true).prompt()?;
+        docker = Confirm::new("Proxy to Docker container?")
+            .with_default(false)
+            .prompt()?;
+        if docker {
+            nginx_https = Confirm::new("HTTPS (SSL + redirect)?")
+                .with_default(true)
+                .prompt()?;
+            nginx_logs = Confirm::new("Access / error logs?")
+                .with_default(true)
+                .prompt()?;
+            let port = Text::new("Host port (container published on 127.0.0.1)")
+                .with_placeholder("8091")
+                .with_validator(|v: &str| Ok(config::validate_port(v.trim())))
+                .prompt()?;
+            docker_host_port = port.trim().parse().unwrap_or(0);
+        } else {
+            nginx_https = Confirm::new("HTTPS (SSL + redirect)?").with_default(true).prompt()?;
+            nginx_php = Confirm::new("PHP (PHP-FPM)?").with_default(true).prompt()?;
+            nginx_logs = Confirm::new("Access / error logs?").with_default(true).prompt()?;
+            nginx_deny = Confirm::new("Deny dotfiles?").with_default(true).prompt()?;
+        }
     }
 
-    let db_mysql = Confirm::new("MySQL database?").with_default(true).prompt()?;
-    let db_pgsql = Confirm::new("PostgreSQL database?").with_default(false).prompt()?;
+    let (db_mysql, db_pgsql) = if docker {
+        (false, false)
+    } else {
+        (
+            Confirm::new("MySQL database?").with_default(true).prompt()?,
+            Confirm::new("PostgreSQL database?").with_default(false).prompt()?,
+        )
+    };
 
     Ok(Answers {
         email,
@@ -245,6 +279,8 @@ fn prompt() -> Result<Answers> {
         nginx_php,
         nginx_logs,
         nginx_deny,
+        docker,
+        docker_host_port,
         db_mysql,
         db_pgsql,
     })

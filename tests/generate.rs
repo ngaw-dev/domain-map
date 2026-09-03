@@ -13,8 +13,23 @@ fn answers() -> Answers {
         nginx_php: true,
         nginx_logs: true,
         nginx_deny: true,
+        docker: false,
+        docker_host_port: 0,
         db_mysql: true,
         db_pgsql: false,
+    }
+}
+
+fn docker_answers() -> Answers {
+    Answers {
+        subdomain: "glitchtip".into(),
+        nginx_php: false,
+        nginx_deny: false,
+        docker: true,
+        docker_host_port: 8091,
+        db_mysql: false,
+        db_pgsql: false,
+        ..answers()
     }
 }
 
@@ -86,6 +101,42 @@ fn nginx_conf_contains_expected_blocks() {
     assert!(conf.contains("fastcgi_pass unix:/run/php/php8.3-fpm.sock;"));
     assert!(conf.contains("deny all;"));
     assert!(conf.contains("access_log /var/log/nginx/example.com.access.log;"));
+}
+
+#[test]
+fn nginx_docker_conf_proxies_to_host_port() {
+    let a = docker_answers();
+    let steps = ngaw_domain::generate::build_steps(&a, "pw");
+    let conf = steps
+        .iter()
+        .find(|s| s.args.iter().any(|a| a.contains("/etc/nginx/sites-available/")))
+        .expect("vhost step")
+        .stdin
+        .as_deref()
+        .unwrap();
+    assert!(conf.contains("server_name glitchtip.example.com;"));
+    assert!(conf.contains("return 301 https://$host$request_uri;"));
+    assert!(conf.contains("listen 443 ssl;"));
+    assert!(conf.contains("proxy_pass http://127.0.0.1:8091;"));
+    assert!(conf.contains("proxy_set_header Host $host;"));
+    assert!(conf.contains("proxy_set_header X-Real-IP $remote_addr;"));
+    assert!(conf.contains("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;"));
+    assert!(conf.contains("proxy_set_header X-Forwarded-Proto $scheme;"));
+    assert!(conf.contains("access_log /var/log/nginx/glitchtip.example.com.access.log;"));
+    assert!(!conf.contains("root /var/www"));
+    assert!(!conf.contains("try_files"));
+    assert!(!conf.contains("fastcgi"));
+    assert!(!conf.contains("deny all;"));
+}
+
+#[test]
+fn docker_mode_skips_docroot_and_db_steps() {
+    let steps = ngaw_domain::generate::build_steps(&docker_answers(), "pw");
+    assert!(!steps.iter().any(|s| s.program == "mkdir"));
+    assert!(!steps.iter().any(|s| s.program == "chown"));
+    assert!(!steps.iter().any(|s| s.stdin.is_some() && s.description.contains("index.html")));
+    assert!(!steps.iter().any(|s| s.description.contains("SQL")));
+    assert!(!steps.iter().any(|s| s.description.contains(".env")));
 }
 
 #[test]

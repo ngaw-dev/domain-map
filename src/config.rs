@@ -19,6 +19,8 @@ pub struct Answers {
     pub nginx_php: bool,
     pub nginx_logs: bool,
     pub nginx_deny: bool,
+    pub docker: bool,
+    pub docker_host_port: u16,
     pub db_mysql: bool,
     pub db_pgsql: bool,
 }
@@ -72,6 +74,16 @@ pub fn validate_domain(domain: &str) -> Validation {
         Validation::Invalid(ErrorMessage::Custom(
             "Enter a domain with a TLD, e.g. example.com".into(),
         ))
+    }
+}
+
+/// Port must be a number in 1..=65535.
+pub fn validate_port(port: &str) -> Validation {
+    match port.parse::<u16>() {
+        Ok(p) if p > 0 => Validation::Valid,
+        _ => Validation::Invalid(ErrorMessage::Custom(
+            "Enter a port between 1 and 65535".into(),
+        )),
     }
 }
 
