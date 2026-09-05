@@ -14,11 +14,7 @@ pub const ICON_WRENCH: &str = "\u{1f527}";
 pub const ICON_INFO: &str = "\u{2139}\u{fe0f}";
 
 pub fn banner() -> String {
-    format!(
-        "{} {}",
-        ICON_ROCKET,
-        "ngaw-domain".bold().cyan()
-    )
+    format!("{} {}", ICON_ROCKET, "ngaw-domain".bold().cyan())
 }
 
 pub fn section(title: &str) -> String {

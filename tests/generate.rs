@@ -75,16 +75,34 @@ fn db_identifiers_replace_dots_and_dashes() {
 
 #[test]
 fn validate_domain_accepts_valid() {
-    assert!(ngaw_domain::config::validate_domain("example.com") == inquire::validator::Validation::Valid);
-    assert!(ngaw_domain::config::validate_domain("sub.example.co.nz") == inquire::validator::Validation::Valid);
+    assert!(
+        ngaw_domain::config::validate_domain("example.com")
+            == inquire::validator::Validation::Valid
+    );
+    assert!(
+        ngaw_domain::config::validate_domain("sub.example.co.nz")
+            == inquire::validator::Validation::Valid
+    );
 }
 
 #[test]
 fn validate_domain_rejects_invalid() {
-    assert_ne!(ngaw_domain::config::validate_domain("example"), inquire::validator::Validation::Valid);
-    assert_ne!(ngaw_domain::config::validate_domain("exa mple.com"), inquire::validator::Validation::Valid);
-    assert_ne!(ngaw_domain::config::validate_domain("-bad.com"), inquire::validator::Validation::Valid);
-    assert_ne!(ngaw_domain::config::validate_domain(""), inquire::validator::Validation::Valid);
+    assert_ne!(
+        ngaw_domain::config::validate_domain("example"),
+        inquire::validator::Validation::Valid
+    );
+    assert_ne!(
+        ngaw_domain::config::validate_domain("exa mple.com"),
+        inquire::validator::Validation::Valid
+    );
+    assert_ne!(
+        ngaw_domain::config::validate_domain("-bad.com"),
+        inquire::validator::Validation::Valid
+    );
+    assert_ne!(
+        ngaw_domain::config::validate_domain(""),
+        inquire::validator::Validation::Valid
+    );
 }
 
 #[test]
@@ -92,7 +110,12 @@ fn nginx_conf_contains_expected_blocks() {
     let steps = ngaw_domain::generate::build_steps(&answers(), "pw");
     let conf_step = steps
         .iter()
-        .find(|s| s.args.first().map(String::as_str) == Some("tee") && s.args.iter().any(|a| a.contains("/etc/nginx/sites-available/")))
+        .find(|s| {
+            s.args.first().map(String::as_str) == Some("tee")
+                && s.args
+                    .iter()
+                    .any(|a| a.contains("/etc/nginx/sites-available/"))
+        })
         .expect("vhost step");
     let conf = conf_step.stdin.as_deref().unwrap();
     assert!(conf.contains("listen 443 ssl;"));
@@ -100,7 +123,7 @@ fn nginx_conf_contains_expected_blocks() {
     assert!(conf.contains("return 301 https://$host$request_uri;"));
     assert!(conf.contains("fastcgi_pass unix:/run/php/php8.3-fpm.sock;"));
     assert!(conf.contains("deny all;"));
-    assert!(conf.contains("access_log /var/log/nginx/example.com.access.log;"));
+    assert!(conf.contains("access_log /var/log/nginx/example.com.access.log json_logs;"));
 }
 
 #[test]
@@ -109,7 +132,11 @@ fn nginx_docker_conf_proxies_to_host_port() {
     let steps = ngaw_domain::generate::build_steps(&a, "pw");
     let conf = steps
         .iter()
-        .find(|s| s.args.iter().any(|a| a.contains("/etc/nginx/sites-available/")))
+        .find(|s| {
+            s.args
+                .iter()
+                .any(|a| a.contains("/etc/nginx/sites-available/"))
+        })
         .expect("vhost step")
         .stdin
         .as_deref()
@@ -122,7 +149,7 @@ fn nginx_docker_conf_proxies_to_host_port() {
     assert!(conf.contains("proxy_set_header X-Real-IP $remote_addr;"));
     assert!(conf.contains("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;"));
     assert!(conf.contains("proxy_set_header X-Forwarded-Proto $scheme;"));
-    assert!(conf.contains("access_log /var/log/nginx/glitchtip.example.com.access.log;"));
+    assert!(conf.contains("access_log /var/log/nginx/glitchtip.example.com.access.log json_logs;"));
     assert!(!conf.contains("root /var/www"));
     assert!(!conf.contains("try_files"));
     assert!(!conf.contains("fastcgi"));
@@ -134,7 +161,11 @@ fn docker_mode_skips_docroot_and_db_steps() {
     let steps = ngaw_domain::generate::build_steps(&docker_answers(), "pw");
     assert!(!steps.iter().any(|s| s.program == "mkdir"));
     assert!(!steps.iter().any(|s| s.program == "chown"));
-    assert!(!steps.iter().any(|s| s.stdin.is_some() && s.description.contains("index.html")));
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.stdin.is_some() && s.description.contains("index.html"))
+    );
     assert!(!steps.iter().any(|s| s.description.contains("SQL")));
     assert!(!steps.iter().any(|s| s.description.contains(".env")));
 }
@@ -147,7 +178,12 @@ fn apache_conf_matches_php_output() {
     let steps = ngaw_domain::generate::build_steps(&a, "pw");
     let conf = steps
         .iter()
-        .find(|s| s.args.first().map(String::as_str) == Some("tee") && s.args.iter().any(|a| a.contains("/etc/apache2/sites-available/")))
+        .find(|s| {
+            s.args.first().map(String::as_str) == Some("tee")
+                && s.args
+                    .iter()
+                    .any(|a| a.contains("/etc/apache2/sites-available/"))
+        })
         .expect("vhost step")
         .stdin
         .as_deref()
@@ -204,4 +240,97 @@ fn password_shape_matches_php_generator() {
         assert!(pw.chars().filter(|c| c.is_ascii_digit()).count() >= 2);
         assert!(pw.chars().filter(|c| !c.is_ascii_alphanumeric()).count() >= 2);
     }
+}
+
+fn obs() -> ngaw_domain::generate::OpenObserve {
+    ngaw_domain::generate::OpenObserve {
+        host: "139.84.204.42".into(),
+        port: "5080".into(),
+        user: "root@example.com".into(),
+        passwd: "secret".into(),
+    }
+}
+
+#[test]
+fn fluentbit_steps_follow_naming_rules() {
+    let mut a = answers();
+    a.subdomain = "s3-api".into();
+    let steps = ngaw_domain::generate::build_steps_with_obs(&a, "pw", Some(obs()));
+    let conf = steps
+        .iter()
+        .find(|s| {
+            s.args
+                .iter()
+                .any(|arg| arg == "/etc/fluent-bit/fluent-bit.conf")
+        })
+        .expect("fluent-bit step")
+        .stdin
+        .as_deref()
+        .unwrap();
+    assert!(
+        conf.contains("Tag               s3_api.access;")
+            || conf.contains("Tag               s3_api.access\n")
+    );
+    assert!(conf.contains("Tag               s3_api.access\n"));
+    assert!(conf.contains("Tag               s3_api.error\n"));
+    assert!(conf.contains("Match             s3_api.access\n"));
+    assert!(conf.contains("Match             s3_api.error\n"));
+    assert!(conf.contains("URI               /api/default/s3_api/_json\n"));
+    assert!(conf.contains("URI               /api/default/s3_api_error/_json\n"));
+    assert!(conf.contains("DB                /var/lib/fluent-bit/s3_api-access.db\n"));
+    assert!(conf.contains("DB                /var/lib/fluent-bit/s3_api-error.db\n"));
+    assert!(conf.contains("Parser            json\n"));
+    assert!(conf.contains("Parser            nginx_error\n"));
+    assert!(conf.contains("Host              139.84.204.42\n"));
+    assert!(conf.contains("Port              5080\n"));
+    assert!(conf.contains("HTTP_User         root@example.com\n"));
+    assert!(conf.contains("HTTP_Passwd       secret\n"));
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.description.contains("Restart Fluent Bit"))
+    );
+}
+
+#[test]
+fn fluentbit_steps_use_env_host_port_overrides() {
+    let mut o = obs();
+    o.host = "10.0.0.5".into();
+    o.port = "5081".into();
+    let steps = ngaw_domain::generate::build_steps_with_obs(&answers(), "pw", Some(o));
+    let conf = steps
+        .iter()
+        .find(|s| {
+            s.args
+                .iter()
+                .any(|arg| arg == "/etc/fluent-bit/fluent-bit.conf")
+        })
+        .expect("fluent-bit step")
+        .stdin
+        .as_deref()
+        .unwrap();
+    assert!(conf.contains("Host              10.0.0.5\n"));
+    assert!(conf.contains("Port              5081\n"));
+}
+
+#[test]
+fn fluentbit_steps_skipped_without_obs() {
+    let steps = ngaw_domain::generate::build_steps_with_obs(&answers(), "pw", None);
+    assert!(!steps.iter().any(|s| {
+        s.args
+            .iter()
+            .any(|arg| arg == "/etc/fluent-bit/fluent-bit.conf")
+    }));
+}
+
+#[test]
+fn fluentbit_steps_skipped_without_logs() {
+    let mut a = answers();
+    a.nginx_logs = false;
+    let steps = ngaw_domain::generate::build_steps_with_obs(&a, "pw", Some(obs()));
+    assert!(!steps.iter().any(|s| {
+        s.args
+            .iter()
+            .any(|arg| arg == "/etc/fluent-bit/fluent-bit.conf")
+    }));
 }

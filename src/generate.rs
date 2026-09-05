@@ -1,5 +1,37 @@
 use crate::config::{Answers, Server};
 
+/// OpenObserve ingestion endpoint + credentials, read from the environment.
+#[derive(Debug, Clone)]
+pub struct OpenObserve {
+    pub host: String,
+    pub port: String,
+    pub user: String,
+    pub passwd: String,
+}
+
+impl OpenObserve {
+    /// Read from OPENOBSERVE_USER / OPENOBSERVE_PASS (required) and
+    /// OPENOBSERVE_HOST / OPENOBSERVE_PORT (optional, defaults apply).
+    pub fn from_env() -> Result<Self, String> {
+        let user = std::env::var("OPENOBSERVE_USER")
+            .map_err(|_| "OPENOBSERVE_USER is not set".to_string())?;
+        let passwd = std::env::var("OPENOBSERVE_PASS")
+            .map_err(|_| "OPENOBSERVE_PASS is not set".to_string())?;
+        if user.trim().is_empty() {
+            return Err("OPENOBSERVE_USER is empty".into());
+        }
+        if passwd.trim().is_empty() {
+            return Err("OPENOBSERVE_PASS is empty".into());
+        }
+        Ok(OpenObserve {
+            host: std::env::var("OPENOBSERVE_HOST").unwrap_or_else(|_| "139.84.204.42".into()),
+            port: std::env::var("OPENOBSERVE_PORT").unwrap_or_else(|_| "5080".into()),
+            user,
+            passwd,
+        })
+    }
+}
+
 /// One shell command to run, with an optional stdin payload (heredoc body).
 #[derive(Debug)]
 pub struct Step {
@@ -11,6 +43,10 @@ pub struct Step {
 }
 
 pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
+    build_steps_with_obs(a, db_password, OpenObserve::from_env().ok())
+}
+
+pub fn build_steps_with_obs(a: &Answers, db_password: &str, obs: Option<OpenObserve>) -> Vec<Step> {
     let fqn = a.fqn();
     let dir = a.dir();
 
@@ -31,9 +67,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
             description: "Write placeholder index.html".into(),
             icon: "📄",
             program: "tee".into(),
-            args: vec![
-                format!("{}/index.html", root.trim_end_matches('/')),
-            ],
+            args: vec![format!("{}/index.html", root.trim_end_matches('/'))],
             stdin: Some(index_body),
         });
     }
@@ -42,6 +76,14 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
     match a.server {
         Server::Nginx => steps.extend(nginx_steps(a, &fqn)),
         Server::Apache => steps.extend(apache_steps(a, &fqn)),
+    }
+
+    // Fluent Bit shippers for the nginx access/error logs.
+    if a.server == Server::Nginx
+        && a.nginx_logs
+        && let Some(obs) = &obs
+    {
+        steps.extend(fluentbit_steps(a, &fqn, obs));
     }
 
     // Permissions (docker proxies serve no local files).
@@ -70,11 +112,7 @@ pub fn build_steps(a: &Answers, db_password: &str) -> Vec<Step> {
             description: "Obtain Let's Encrypt certificate".into(),
             icon: "🔒",
             program: "certbot".into(),
-            args: vec![
-                flag.into(),
-                "-d".into(),
-                fqn.clone(),
-            ],
+            args: vec![flag.into(), "-d".into(), fqn.clone()],
             stdin: None,
         });
     }
@@ -228,8 +266,7 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
         ));
         conf.push_str("        proxy_set_header Host $host;\n");
         conf.push_str("        proxy_set_header X-Real-IP $remote_addr;\n");
-        conf
-            .push_str("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n");
+        conf.push_str("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n");
         conf.push_str("        # Important: Tell your app that it's behind HTTPS\n");
         conf.push_str("        proxy_set_header X-Forwarded-Proto $scheme;\n");
         conf.push_str("    }\n");
@@ -250,8 +287,9 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
             conf.push_str("\n    location ~ \\.php$ {\n");
             conf.push_str("        include snippets/fastcgi-php.conf;\n");
             conf.push_str("        fastcgi_pass unix:/run/php/php8.3-fpm.sock;\n");
-            conf
-                .push_str("        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n");
+            conf.push_str(
+                "        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n",
+            );
             conf.push_str("        include fastcgi_params;\n");
             conf.push_str("    }\n");
         }
@@ -263,11 +301,9 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     }
     if a.nginx_logs {
         conf.push_str(&format!(
-            "\n    access_log /var/log/nginx/{fqn}.access.log;\n"
+            "\n    access_log /var/log/nginx/{fqn}.access.log json_logs;\n"
         ));
-        conf.push_str(&format!(
-            "    error_log /var/log/nginx/{fqn}.error.log;\n"
-        ));
+        conf.push_str(&format!("    error_log /var/log/nginx/{fqn}.error.log;\n"));
     }
     conf.push_str("}\n");
 
@@ -276,9 +312,7 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
             description: "Write nginx vhost config".into(),
             icon: "⚙️",
             program: "tee".into(),
-            args: vec![
-                format!("/etc/nginx/sites-available/{fqn}.conf"),
-            ],
+            args: vec![format!("/etc/nginx/sites-available/{fqn}.conf")],
             stdin: Some(conf),
         },
         Step {
@@ -324,6 +358,76 @@ fn nginx_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     steps
 }
 
+/// Fluent Bit tail inputs + HTTP outputs appended to fluent-bit.conf.
+/// Naming rules: tag = <site>.access/<site>.error, stream = <site>/<site>_error,
+/// DB = /var/lib/fluent-bit/<site>-access.db (dashes sanitized to underscores).
+fn fluentbit_steps(a: &Answers, fqn: &str, obs: &OpenObserve) -> Vec<Step> {
+    let site = a
+        .dir()
+        .trim_start_matches(&a.domain)
+        .trim_matches('/')
+        .trim_end_matches("/public")
+        .replace(['.', '-'], "_");
+    let conf = format!(
+        "\n[INPUT]\n\
+         \x20   Name              tail\n\
+         \x20   Path              /var/log/nginx/{fqn}.access.log\n\
+         \x20   Parser            json\n\
+         \x20   Tag               {site}.access\n\
+         \x20   Skip_Long_Lines   On\n\
+         \x20   Read_From_Head    Off\n\
+         \x20   DB                /var/lib/fluent-bit/{site}-access.db\n\
+         \n[INPUT]\n\
+         \x20   Name              tail\n\
+         \x20   Path              /var/log/nginx/{fqn}.error.log\n\
+         \x20   Parser            nginx_error\n\
+         \x20   Tag               {site}.error\n\
+         \x20   Skip_Long_Lines   On\n\
+         \x20   Read_From_Head    Off\n\
+         \x20   DB                /var/lib/fluent-bit/{site}-error.db\n\
+         \n[OUTPUT]\n\
+         \x20   Name              http\n\
+         \x20   Match             {site}.access\n\
+         \x20   Host              {host}\n\
+         \x20   Port              {port}\n\
+         \x20   URI               /api/default/{site}/_json\n\
+         \x20   Format            json\n\
+         \x20   HTTP_User         {user}\n\
+         \x20   HTTP_Passwd       {passwd}\n\
+         \x20   tls               off\n\
+         \n[OUTPUT]\n\
+         \x20   Name              http\n\
+         \x20   Match             {site}.error\n\
+         \x20   Host              {host}\n\
+         \x20   Port              {port}\n\
+         \x20   URI               /api/default/{site}_error/_json\n\
+         \x20   Format            json\n\
+         \x20   HTTP_User         {user}\n\
+         \x20   HTTP_Passwd       {passwd}\n\
+         \x20   tls               off\n",
+        host = obs.host,
+        port = obs.port,
+        user = obs.user,
+        passwd = obs.passwd,
+    );
+    vec![
+        Step {
+            description: format!("Append Fluent Bit inputs/outputs for {site}"),
+            icon: "🪵",
+            program: "tee".into(),
+            args: vec!["-a".into(), "/etc/fluent-bit/fluent-bit.conf".into()],
+            stdin: Some(conf),
+        },
+        Step {
+            description: "Restart Fluent Bit".into(),
+            icon: "🔄",
+            program: "systemctl".into(),
+            args: vec!["restart".into(), "fluent-bit".into()],
+            stdin: None,
+        },
+    ]
+}
+
 fn apache_steps(a: &Answers, fqn: &str) -> Vec<Step> {
     let dir = a.dir();
     let mut conf = String::new();
@@ -341,9 +445,7 @@ fn apache_steps(a: &Answers, fqn: &str) -> Vec<Step> {
             description: "Write apache vhost config".into(),
             icon: "⚙️",
             program: "tee".into(),
-            args: vec![
-                format!("/etc/apache2/sites-available/{fqn}.conf"),
-            ],
+            args: vec![format!("/etc/apache2/sites-available/{fqn}.conf")],
             stdin: Some(conf),
         },
         Step {

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use inquire::{Confirm, Select, Text};
 use ngaw_domain::config::{self, Answers, Server};
 use ngaw_domain::ui;
@@ -16,6 +16,20 @@ fn main() -> Result<()> {
         "domain provisioning, interactive".dimmed()
     );
 
+    // Fluent Bit/OpenObserve shipping requires these env vars; fail fast
+    // before any prompts or steps run.
+    let obs = generate::OpenObserve::from_env().map_err(|e| {
+        println!("{} {}", ui::ICON_CROSS, e.red().bold());
+        println!(
+            "{}",
+            ui::info(
+                "Export OPENOBSERVE_USER and OPENOBSERVE_PASS (optionally \
+                 OPENOBSERVE_HOST, OPENOBSERVE_PORT) and re-run."
+            )
+        );
+        anyhow::anyhow!("missing OpenObserve environment configuration")
+    })?;
+
     let answers = match positional.as_slice() {
         [] => prompt()?,
         [domain] => from_args(domain, None)?,
@@ -27,21 +41,20 @@ fn main() -> Result<()> {
     } else {
         String::new()
     };
-    let steps = generate::build_steps(&answers, &db_password);
+    let steps = generate::build_steps_with_obs(&answers, &db_password, Some(obs));
 
     print_summary(&answers);
     if !execute_now {
         println!("{}", ui::section("The following will be executed"));
         for (i, step) in steps.iter().enumerate() {
-            println!("\n{}", ui::step(i + 1, steps.len(), step.icon, &step.description));
+            println!(
+                "\n{}",
+                ui::step(i + 1, steps.len(), step.icon, &step.description)
+            );
             println!("  {}", ui::command(&execute::describe_step(step)));
         }
         if let Some(env) = generate::env_snippet(&answers, &db_password) {
-            println!(
-                "\n{} {}",
-                ui::ICON_DB,
-                ".env (copy into your app)".bold()
-            );
+            println!("\n{} {}", ui::ICON_DB, ".env (copy into your app)".bold());
             println!("{}", env.dimmed());
         }
         println!(
@@ -66,11 +79,7 @@ fn main() -> Result<()> {
             failures.len().to_string().red().bold()
         );
         for f in &failures {
-            println!(
-                "\n  {} {}",
-                ui::ICON_CROSS,
-                f.description.red()
-            );
+            println!("\n  {} {}", ui::ICON_CROSS, f.description.red());
             println!("  {} {}", ui::ICON_WRENCH, f.command);
             if !f.output.is_empty() {
                 println!("{}", f.output.dimmed());
@@ -121,7 +130,10 @@ fn print_followups(a: &Answers) {
 /// invalid. Everything else falls back to defaults (matching prompt defaults).
 fn from_args(domain: &str, user: Option<&str>) -> Result<Answers> {
     let domain = domain.trim().to_lowercase();
-    if !matches!(config::validate_domain(&domain), inquire::validator::Validation::Valid) {
+    if !matches!(
+        config::validate_domain(&domain),
+        inquire::validator::Validation::Valid
+    ) {
         bail!("invalid domain: {domain} (expected sub.domain.tld or domain.tld)");
     }
 
@@ -134,9 +146,7 @@ fn from_args(domain: &str, user: Option<&str>) -> Result<Answers> {
 
     Ok(Answers {
         email: "hello@ngaw.xyz".into(),
-        server_user: user
-            .map(str::to_string)
-            .unwrap_or_else(whoami_default),
+        server_user: user.map(str::to_string).unwrap_or_else(whoami_default),
         domain,
         subdomain,
         server: Server::Nginx,
@@ -158,7 +168,16 @@ fn print_summary(a: &Answers) {
     println!("{}", ui::label_value("Domain", &a.fqn()));
     println!(
         "{}",
-        ui::label_value("Server", if a.docker { "nginx (docker)" } else if a.server == Server::Nginx { "nginx" } else { "apache" })
+        ui::label_value(
+            "Server",
+            if a.docker {
+                "nginx (docker)"
+            } else if a.server == Server::Nginx {
+                "nginx"
+            } else {
+                "apache"
+            }
+        )
     );
     let docroot = if a.docker {
         "— (docker proxy)".to_string()
@@ -168,7 +187,16 @@ fn print_summary(a: &Answers) {
     println!("{}", ui::label_value("Docroot", &docroot));
     println!(
         "{}",
-        ui::label_value("SSL", if a.letsencrypt { "Let's Encrypt" } else if a.nginx_https { "self-signed" } else { "none" })
+        ui::label_value(
+            "SSL",
+            if a.letsencrypt {
+                "Let's Encrypt"
+            } else if a.nginx_https {
+                "self-signed"
+            } else {
+                "none"
+            }
+        )
     );
     let mut dbs: Vec<&str> = Vec::new();
     if a.db_mysql {
@@ -180,7 +208,10 @@ fn print_summary(a: &Answers) {
     let dbs_joined = dbs.join(", ");
     println!(
         "{}",
-        ui::label_value("Databases", if dbs.is_empty() { "none" } else { &dbs_joined })
+        ui::label_value(
+            "Databases",
+            if dbs.is_empty() { "none" } else { &dbs_joined }
+        )
     );
     if a.docker {
         println!(
@@ -200,9 +231,7 @@ fn whoami_default() -> String {
 }
 
 fn prompt() -> Result<Answers> {
-    let email = Text::new("Email")
-        .with_default("hello@ngaw.xyz")
-        .prompt()?;
+    let email = Text::new("Email").with_default("hello@ngaw.xyz").prompt()?;
 
     let server_user = Text::new("Server username (for file ownership)")
         .with_default(whoami_default().as_str())
@@ -250,16 +279,24 @@ fn prompt() -> Result<Answers> {
             .prompt()?;
         docker_host_port = port.trim().parse().unwrap_or(0);
     } else if server == Server::Nginx {
-        nginx_https = Confirm::new("HTTPS (SSL + redirect)?").with_default(true).prompt()?;
+        nginx_https = Confirm::new("HTTPS (SSL + redirect)?")
+            .with_default(true)
+            .prompt()?;
         nginx_php = Confirm::new("PHP (PHP-FPM)?").with_default(true).prompt()?;
-        nginx_logs = Confirm::new("Access / error logs?").with_default(true).prompt()?;
+        nginx_logs = Confirm::new("Access / error logs?")
+            .with_default(true)
+            .prompt()?;
         nginx_deny = Confirm::new("Deny dotfiles?").with_default(true).prompt()?;
     }
 
     let (mut db_mysql, mut db_pgsql) = (false, false);
     if !docker {
-        db_mysql = Confirm::new("MySQL database?").with_default(true).prompt()?;
-        db_pgsql = Confirm::new("PostgreSQL database?").with_default(false).prompt()?;
+        db_mysql = Confirm::new("MySQL database?")
+            .with_default(true)
+            .prompt()?;
+        db_pgsql = Confirm::new("PostgreSQL database?")
+            .with_default(false)
+            .prompt()?;
     }
 
     Ok(Answers {
